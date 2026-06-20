@@ -18,11 +18,11 @@
   let localSelections = {}  // optionId → 로컬 선택 횟수 (제출 전)
   let unsubVotes, unsubOptions, unsubRecords
 
-  let form = { title: '', voteType: 'destination', linkedDestination: '', deadline: '', maxVotesPerUser: 1 }
+  let form = { title: '', voteType: 'destination', linkedDestination: '', deadline: '', maxVotesPerUser: 1, winnersCount: 1 }
   let newOption = emptyOption()
   let closedDestinations = []   // 마감된 여행지 투표의 당선 여행지 목록
 
-  $: if (form.voteType === 'attraction') {
+  $: if (form.voteType === 'attraction' || form.voteType === 'accommodation') {
     closedDestinations = votes
       .filter(v => v.voteType === 'destination' && v.status === 'closed' && v.winners?.length)
       .flatMap(v => v.winners.map(w => w.placeName ?? w))
@@ -30,13 +30,26 @@
   }
 
   function emptyOption() {
-    return { placeName: '', description: '', mapUrl: '' }
+    return { placeName: '', description: '', mapUrl: '', price: '', bedCount: '', siteUrl: '' }
+  }
+
+  function normalizeUrl(url) {
+    const s = url?.trim()
+    if (!s) return null
+    return /^https?:\/\//i.test(s) ? s : 'https://' + s
   }
 
   function statusLabel(vote) {
     if (vote.status === 'recruiting') return '모집중'
     if (isClosed(vote)) return '마감'
     return '투표중'
+  }
+
+  function typeLabel(vote) {
+    if (vote.voteType === 'destination') return '여행지'
+    if (vote.voteType === 'attraction') return '관광지'
+    if (vote.voteType === 'accommodation') return '숙소'
+    return ''
   }
 
   $: if ($currentGroup) {
@@ -184,6 +197,9 @@
         mapUrl,
         lat,
         lng,
+        price: newOption.price?.trim() || null,
+        bedCount: newOption.bedCount ? Number(newOption.bedCount) : null,
+        siteUrl: normalizeUrl(newOption.siteUrl),
         createdBy: $user.uid,
       }
     )
@@ -197,12 +213,22 @@
   }
 
   async function closeVote() {
-    const maxCount = Math.max(0, ...voteOptions.map(o => voteRecords[o.id] || 0))
-    const winners = maxCount === 0
-      ? []
-      : voteOptions
-          .filter(o => (voteRecords[o.id] || 0) === maxCount)
-          .map(o => ({ placeName: o.placeName, description: o.description || '', mapUrl: o.mapUrl || null, lat: o.lat || null, lng: o.lng || null }))
+    const n = selectedVote.winnersCount ?? 1
+    // 득표(양수)한 후보만 대상으로 정렬
+    const positive = voteOptions
+      .map(o => ({ ...o, score: voteRecords[o.id] || 0 }))
+      .filter(o => o.score > 0)
+      .sort((a, b) => b.score - a.score)
+
+    let winners = []
+    if (positive.length > 0) {
+      // 상위 n번째 점수를 기준으로, 동점이면 모두 포함
+      const cutoffScore = positive[Math.min(n, positive.length) - 1].score
+      winners = positive
+        .filter(o => o.score >= cutoffScore)
+        .map(o => ({ placeName: o.placeName, description: o.description || '', mapUrl: o.mapUrl || null, lat: o.lat || null, lng: o.lng || null }))
+    }
+
     await updateDoc(
       doc(db, 'groups', $currentGroup.id, 'votes', selectedVote.id),
       { status: 'closed', winners }
@@ -237,13 +263,14 @@
         linkedDestination: form.voteType === 'attraction' ? form.linkedDestination : null,
         deadline: form.deadline ? new Date(form.deadline) : null,
         maxVotesPerUser: Number(form.maxVotesPerUser) || 1,
+        winnersCount: form.voteType === 'attraction' ? Number(form.winnersCount) || 1 : null,
         status: 'recruiting',
         createdBy: $user.uid,
         createdAt: serverTimestamp(),
       }
     )
 
-    form = { title: '', voteType: 'destination', linkedDestination: '', deadline: '', maxVotesPerUser: 1 }
+    form = { title: '', voteType: 'destination', linkedDestination: '', deadline: '', maxVotesPerUser: 1, winnersCount: 1 }
     view = 'list'
   }
 
@@ -268,6 +295,18 @@
     (a, b) => (voteRecords[b.id] || 0) - (voteRecords[a.id] || 0)
   )
   $: topCount = sortedOptions[0] ? (voteRecords[sortedOptions[0].id] || 0) : 0
+
+  // 저장된 winners 배열 대신 voteRecords + winnersCount 로 실시간 계산
+  $: winnerIds = (() => {
+    if (!selectedVote) return new Set()
+    const n = selectedVote.winnersCount ?? 1
+    const positive = sortedOptions
+      .map(o => ({ id: o.id, score: voteRecords[o.id] || 0 }))
+      .filter(o => o.score > 0)
+    if (positive.length === 0) return new Set()
+    const cutoff = positive[Math.min(n, positive.length) - 1].score
+    return new Set(positive.filter(o => o.score >= cutoff).map(o => o.id))
+  })()
 </script>
 
 {#if !$currentGroup}
@@ -284,7 +323,7 @@
       <!-- svelte-ignore a11y-click-events-have-key-events -->
       <!-- svelte-ignore a11y-no-static-element-interactions -->
       <div class="card" style="cursor: pointer" on:click={() => openDetail(v)}>
-        <span>[{v.voteType === 'destination' ? '여행지' : '관광지'}]</span>
+        <span>[{typeLabel(v)}]</span>
         <strong> {v.title}</strong>
         <span style="float: right">
           {statusLabel(v)}
@@ -310,11 +349,12 @@
     <select bind:value={form.voteType}>
       <option value="destination">여행지 투표</option>
       <option value="attraction">관광지 투표</option>
+      <option value="accommodation">숙소 투표</option>
     </select>
   </label>
   <br><br>
 
-  {#if form.voteType === 'attraction'}
+  {#if form.voteType === 'attraction' || form.voteType === 'accommodation'}
     <label>연결할 여행지<br>
       {#if closedDestinations.length === 0}
         <p>마감된 여행지 투표가 없습니다. 여행지를 먼저 결정해 주세요.</p>
@@ -341,6 +381,12 @@
   <label>1인당 최대 투표 수<br>
     <input type="number" bind:value={form.maxVotesPerUser} min="1" max="10" style="width: 4rem" />
   </label>
+  {#if form.voteType === 'attraction'}
+    &nbsp;&nbsp;
+    <label>당선 인원 수<br>
+      <input type="number" bind:value={form.winnersCount} min="1" style="width: 4rem" />
+    </label>
+  {/if}
   <br><br>
 
   <button on:click={createVote}>모집 시작</button>
@@ -350,7 +396,7 @@
   <h2>{selectedVote.title}</h2>
   <button on:click={back}>← 목록으로</button>
   <span style="margin-left: 1rem">
-    [{selectedVote.voteType === 'destination' ? '여행지' : '관광지'}]
+    [{typeLabel(selectedVote)}]
     {isClosed(selectedVote) ? ' 마감' : ' 진행중'}
   </span>
   {#if selectedVote.deadline}
@@ -395,6 +441,20 @@
       {#if isShortMapUrl(newOption.mapUrl)}
         <br><small style="color: #c00">단축 URL(maps.app.goo.gl)은 좌표 추출이 불가합니다. Google Maps 주소창의 전체 URL을 붙여넣어 주세요.</small>
       {/if}
+      {#if selectedVote?.voteType === 'accommodation' || form.voteType === 'accommodation'}
+        <br>
+        <label>가격<br>
+          <input bind:value={newOption.price} placeholder="예: 1박 12만원" style="width: 100%" />
+        </label>
+        <br>
+        <label>침대 개수<br>
+          <input type="number" bind:value={newOption.bedCount} min="1" placeholder="예: 2" style="width: 5rem" />
+        </label>
+        <br>
+        <label>숙소 사이트 URL (선택)<br>
+          <input bind:value={newOption.siteUrl} placeholder="https://www.airbnb.com/..." style="width: 100%" />
+        </label>
+      {/if}
       <br><br>
       <button on:click={addOptionToVote}>+ 후보 등록</button>
     </div>
@@ -411,12 +471,20 @@
     {:else}
       {#each sortedOptions as opt, i}
         {@const count = voteRecords[opt.id] || 0}
+        {@const isWinner = winnerIds.has(opt.id)}
         <div class="card">
+          {#if isWinner}<strong>[당선] </strong>{/if}
           <strong>{opt.placeName}</strong>
           {#if opt.description}<span> — {opt.description}</span>{/if}
           <span style="float: right">{count}표</span>
           {#if myVoteCounts[opt.id]}
             <span> (내 선택{myVoteCounts[opt.id] > 1 ? ` ×${myVoteCounts[opt.id]}` : ''})</span>
+          {/if}
+          {#if selectedVote.voteType === 'accommodation'}
+            <br>
+            {#if opt.price}<span>💰 {opt.price}</span>{/if}
+            {#if opt.bedCount}<span> · 🛏 {opt.bedCount}개</span>{/if}
+            {#if opt.siteUrl}<span> · <a href={opt.siteUrl} target="_blank" rel="noopener noreferrer">예약 사이트</a></span>{/if}
           {/if}
           {#if opt.mapUrl}
             <iframe
@@ -450,6 +518,11 @@
           {#if opt.description}<span> — {opt.description}</span>{/if}
           <span style="float: right">{voteRecords[opt.id] || 0}표</span>
           <br style="clear: both">
+          {#if selectedVote.voteType === 'accommodation'}
+            {#if opt.price}<span>💰 {opt.price}</span>{/if}
+            {#if opt.bedCount}<span> · 🛏 {opt.bedCount}개</span>{/if}
+            {#if opt.siteUrl}<span> · <a href={opt.siteUrl} target="_blank" rel="noopener noreferrer">예약 사이트</a></span>{/if}
+          {/if}
         </div>
         <!-- 2행: 내 선택 표시 or +/- 컨트롤 -->
         {#if isSubmitted}

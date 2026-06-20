@@ -57,6 +57,7 @@
 
     /options/{optionId}
       placeName, description, mapUrl, lat, lng, createdBy
+      price, bedCount, siteUrl   ← 숙소 투표 전용 (nullable)
 
     /records/{userId}          ← 문서 ID를 userId로 사용 → 1인 1표 자동 보장
       optionId, votedAt
