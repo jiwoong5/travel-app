@@ -68,9 +68,10 @@ function extractPlaceId(mapUrl) {
 
 function extractLatLng(mapUrl) {
   if (!mapUrl) return null
-  const m = mapUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/)
+  // !3d!4d 우선 — 실제 핀 위치 (@ 좌표는 뷰포트 중심이라 부정확할 수 있음)
+  const m = mapUrl.match(/!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)/)
+    || mapUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/)
     || mapUrl.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/)
     || mapUrl.match(/ll=(-?\d+\.\d+),(-?\d+\.\d+)/)
-    || mapUrl.match(/!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)/)   // data= 파라미터 형태
   return m ? `${m[1]},${m[2]}` : null
 }
