@@ -1,6 +1,7 @@
 const API_KEY = import.meta.env.VITE_MAPS_API_KEY
 
-export function buildEmbedUrl(mapUrl, placeName) {
+export function buildEmbedUrl(mapUrl, placeName, lat, lng) {
+  if (lat && lng) return `https://www.google.com/maps/embed/v1/place?key=${API_KEY}&q=${lat},${lng}`
   const placeId = extractPlaceId(mapUrl)
   const q = placeId ? `place_id:${placeId}` : encodeURIComponent(placeName)
   return `https://www.google.com/maps/embed/v1/place?key=${API_KEY}&q=${q}`

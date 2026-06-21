@@ -536,7 +536,7 @@
           {#if opt.mainMenu}<span> · 주메뉴: {opt.mainMenu}</span>{/if}
         {/if}
         {#if opt.mapUrl}
-          <iframe class="map-embed" src={buildEmbedUrl(opt.mapUrl, opt.placeName)}
+          <iframe class="map-embed" src={buildEmbedUrl(opt.mapUrl, opt.placeName, opt.lat, opt.lng)}
             title={opt.placeName} allowfullscreen loading="lazy"></iframe>
         {/if}
         {#if canEditOption(opt)}
@@ -668,7 +668,7 @@
           {#if opt.mapUrl}
             <iframe
               class="map-embed"
-              src={buildEmbedUrl(opt.mapUrl, opt.placeName)}
+              src={buildEmbedUrl(opt.mapUrl, opt.placeName, opt.lat, opt.lng)}
               title={opt.placeName}
               allowfullscreen
               loading="lazy"
@@ -727,7 +727,7 @@
         {#if opt.mapUrl}
           <iframe
             class="map-embed"
-            src={buildEmbedUrl(opt.mapUrl, opt.placeName)}
+            src={buildEmbedUrl(opt.mapUrl, opt.placeName, opt.lat, opt.lng)}
             title={opt.placeName}
             allowfullscreen
             loading="lazy"
