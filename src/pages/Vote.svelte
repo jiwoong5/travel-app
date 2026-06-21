@@ -414,6 +414,12 @@
       <div class="card">
         <strong>{opt.placeName}</strong>
         {#if opt.description}<span> — {opt.description}</span>{/if}
+        {#if selectedVote.voteType === 'accommodation'}
+          <br>
+          {#if opt.price}<span>💰 {opt.price}</span>{/if}
+          {#if opt.bedCount}<span> · 🛏 {opt.bedCount}개</span>{/if}
+          {#if opt.siteUrl}<span> · <a href={opt.siteUrl} target="_blank" rel="noopener noreferrer">예약 사이트</a></span>{/if}
+        {/if}
         {#if opt.mapUrl}
           <iframe class="map-embed" src={buildEmbedUrl(opt.mapUrl, opt.placeName)}
             title={opt.placeName} allowfullscreen loading="lazy"></iframe>
