@@ -53,11 +53,13 @@
   /votes/{voteId}
     title, voteType, linkedDestination, deadline, createdBy, createdAt
     status: recruiting | ongoing | closed
+    voteType: destination | accommodation | attraction | restaurant
     winners: { placeName, description, mapUrl }[]   ← 마감 시 저장, 동률 시 복수
 
     /options/{optionId}
       placeName, description, mapUrl, lat, lng, createdBy
-      price, bedCount, siteUrl   ← 숙소 투표 전용 (nullable)
+      price, bedCount, siteUrl            ← 숙소 투표 전용 (nullable)
+      priceRange, mealType, hours, mainMenu  ← 맛집 투표 전용 (nullable)
 
     /records/{userId}          ← 문서 ID를 userId로 사용 → 1인 1표 자동 보장
       optionId, votedAt

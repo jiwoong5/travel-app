@@ -217,6 +217,80 @@
     )
   }
 
+  // 투표 자체 수정
+  let editingVote = false
+  let voteEditForm = {}
+
+  function startEditVote() {
+    voteEditForm = {
+      title: selectedVote.title,
+      deadline: selectedVote.deadline
+        ? (selectedVote.deadline.toDate?.() ?? new Date(selectedVote.deadline)).toISOString().slice(0, 10)
+        : '',
+      maxVotesPerUser: selectedVote.maxVotesPerUser ?? 1,
+      linkedDestination: selectedVote.linkedDestination ?? '',
+    }
+    editingVote = true
+  }
+
+  async function saveVote() {
+    const isRecruiting = selectedVote.status === 'recruiting'
+    const data = { deadline: voteEditForm.deadline ? new Date(voteEditForm.deadline) : null }
+    if (isRecruiting) {
+      data.title = voteEditForm.title.trim() || selectedVote.title
+      data.maxVotesPerUser = Number(voteEditForm.maxVotesPerUser) || 1
+      data.linkedDestination = voteEditForm.linkedDestination || null
+    }
+    await updateDoc(doc(db, 'groups', $currentGroup.id, 'votes', selectedVote.id), data)
+    editingVote = false
+  }
+
+  // 후보 항목 수정
+  let editingOption = null
+  let optionEditForm = {}
+
+  function startEditOption(opt) {
+    optionEditForm = {
+      placeName: opt.placeName ?? '',
+      description: opt.description ?? '',
+      mapUrl: opt.mapUrl ?? '',
+      price: opt.price ?? '',
+      bedCount: opt.bedCount ?? '',
+      siteUrl: opt.siteUrl ?? '',
+      priceRange: opt.priceRange ?? '',
+      mealType: opt.mealType ?? [],
+      hours: opt.hours ?? '',
+      mainMenu: opt.mainMenu ?? '',
+    }
+    editingOption = opt.id
+  }
+
+  async function saveOption() {
+    const mapUrl = optionEditForm.mapUrl.trim() || null
+    const { lat, lng } = extractCoordsForStorage(mapUrl)
+    await updateDoc(
+      doc(db, 'groups', $currentGroup.id, 'votes', selectedVote.id, 'options', editingOption),
+      {
+        placeName: optionEditForm.placeName.trim(),
+        description: optionEditForm.description.trim(),
+        mapUrl, lat, lng,
+        price: optionEditForm.price?.trim() || null,
+        bedCount: optionEditForm.bedCount ? Number(optionEditForm.bedCount) : null,
+        siteUrl: normalizeUrl(optionEditForm.siteUrl),
+        priceRange: optionEditForm.priceRange?.trim() || null,
+        mealType: optionEditForm.mealType?.length ? optionEditForm.mealType : null,
+        hours: optionEditForm.hours?.trim() || null,
+        mainMenu: optionEditForm.mainMenu?.trim() || null,
+      }
+    )
+    editingOption = null
+  }
+
+  function canEditOption(opt) {
+    return selectedVote.status === 'recruiting' &&
+      (opt.createdBy === $user.uid || selectedVote.createdBy === $user.uid)
+  }
+
   async function closeVote() {
     const n = selectedVote.winnersCount ?? 1
     // 득표(양수)한 후보만 대상으로 정렬
@@ -404,13 +478,40 @@
   <button on:click={back}>← 목록으로</button>
   <span style="margin-left: 1rem">
     [{typeLabel(selectedVote)}]
-    {isClosed(selectedVote) ? ' 마감' : ' 진행중'}
+    {isClosed(selectedVote) ? ' 마감' : selectedVote.status === 'recruiting' ? ' 모집중' : ' 투표중'}
   </span>
   {#if selectedVote.deadline}
     <small> · 마감일: {formatDeadline(selectedVote.deadline)}</small>
   {/if}
   {#if (selectedVote.voteType === 'attraction' || selectedVote.voteType === 'accommodation' || selectedVote.voteType === 'restaurant') && selectedVote.linkedDestination}
     <small> · 여행지: {selectedVote.linkedDestination}</small>
+  {/if}
+  {#if selectedVote.createdBy === $user.uid && !isClosed(selectedVote)}
+    <button on:click={startEditVote} style="margin-left:0.5rem">투표 수정</button>
+  {/if}
+
+  {#if editingVote}
+    <div class="card" style="margin-top:0.8rem">
+      {#if selectedVote.status === 'recruiting'}
+        <label>제목<br><input bind:value={voteEditForm.title} style="width:100%" /></label><br><br>
+        <label>1인당 최대 투표 수<br>
+          <input type="number" bind:value={voteEditForm.maxVotesPerUser} min="1" max="10" style="width:4rem" />
+        </label><br><br>
+        {#if selectedVote.voteType !== 'destination'}
+          <label>연결 여행지<br>
+            <select bind:value={voteEditForm.linkedDestination}>
+              <option value="">없음</option>
+              {#each closedDestinations as dest}
+                <option value={dest}>{dest}</option>
+              {/each}
+            </select>
+          </label><br><br>
+        {/if}
+      {/if}
+      <label>마감일<br><input type="date" bind:value={voteEditForm.deadline} /></label><br><br>
+      <button on:click={saveVote}>저장</button>
+      <button on:click={() => editingVote = false}>취소</button>
+    </div>
   {/if}
   <hr>
 
@@ -438,8 +539,36 @@
           <iframe class="map-embed" src={buildEmbedUrl(opt.mapUrl, opt.placeName)}
             title={opt.placeName} allowfullscreen loading="lazy"></iframe>
         {/if}
-        {#if opt.createdBy === $user.uid}
-          <br><button on:click={() => deleteOption(opt)}>삭제</button>
+        {#if canEditOption(opt)}
+          <br>
+          <button on:click={() => startEditOption(opt)}>수정</button>
+          <button on:click={() => deleteOption(opt)}>삭제</button>
+        {/if}
+
+        {#if editingOption === opt.id}
+          <div style="margin-top:0.5rem">
+            <input bind:value={optionEditForm.placeName} placeholder="장소명 *" style="width:100%" /><br><br>
+            <input bind:value={optionEditForm.description} placeholder="설명" style="width:100%" /><br><br>
+            <input bind:value={optionEditForm.mapUrl} placeholder="Google Maps URL" style="width:100%" />
+            {#if isShortMapUrl(optionEditForm.mapUrl)}
+              <br><small style="color:#c00">단축 URL은 좌표 추출 불가. 전체 URL을 사용해 주세요.</small>
+            {/if}
+            {#if selectedVote.voteType === 'accommodation'}
+              <br><br>
+              <input bind:value={optionEditForm.price} placeholder="가격" style="width:100%" /><br><br>
+              <input type="number" bind:value={optionEditForm.bedCount} placeholder="침대 개수" style="width:5rem" /><br><br>
+              <input bind:value={optionEditForm.siteUrl} placeholder="숙소 사이트 URL" style="width:100%" />
+            {/if}
+            {#if selectedVote.voteType === 'restaurant'}
+              <br><br>
+              <input bind:value={optionEditForm.priceRange} placeholder="가격대" style="width:100%" /><br><br>
+              <input bind:value={optionEditForm.hours} placeholder="영업시간" style="width:100%" /><br><br>
+              <input bind:value={optionEditForm.mainMenu} placeholder="주메뉴" style="width:100%" />
+            {/if}
+            <br><br>
+            <button on:click={saveOption}>저장</button>
+            <button on:click={() => editingOption = null}>취소</button>
+          </div>
         {/if}
       </div>
     {/each}
