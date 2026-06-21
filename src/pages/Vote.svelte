@@ -22,7 +22,7 @@
   let newOption = emptyOption()
   let closedDestinations = []   // 마감된 여행지 투표의 당선 여행지 목록
 
-  $: if (form.voteType === 'attraction' || form.voteType === 'accommodation') {
+  $: if (form.voteType === 'attraction' || form.voteType === 'accommodation' || form.voteType === 'restaurant') {
     closedDestinations = votes
       .filter(v => v.voteType === 'destination' && v.status === 'closed' && v.winners?.length)
       .flatMap(v => v.winners.map(w => w.placeName ?? w))
@@ -30,7 +30,7 @@
   }
 
   function emptyOption() {
-    return { placeName: '', description: '', mapUrl: '', price: '', bedCount: '', siteUrl: '' }
+    return { placeName: '', description: '', mapUrl: '', price: '', bedCount: '', siteUrl: '', priceRange: '', mealType: [], hours: '', mainMenu: '' }
   }
 
   function normalizeUrl(url) {
@@ -49,6 +49,7 @@
     if (vote.voteType === 'destination') return '여행지'
     if (vote.voteType === 'attraction') return '관광지'
     if (vote.voteType === 'accommodation') return '숙소'
+    if (vote.voteType === 'restaurant') return '맛집'
     return ''
   }
 
@@ -200,6 +201,10 @@
         price: newOption.price?.trim() || null,
         bedCount: newOption.bedCount ? Number(newOption.bedCount) : null,
         siteUrl: normalizeUrl(newOption.siteUrl),
+        priceRange: newOption.priceRange?.trim() || null,
+        mealType: newOption.mealType?.length ? newOption.mealType : null,
+        hours: newOption.hours?.trim() || null,
+        mainMenu: newOption.mainMenu?.trim() || null,
         createdBy: $user.uid,
       }
     )
@@ -253,14 +258,15 @@
 
   async function createVote() {
     if (!form.title.trim()) return
-    if (form.voteType === 'attraction' && !form.linkedDestination) return
+    if ((form.voteType === 'attraction' || form.voteType === 'restaurant') && !form.linkedDestination) return
 
+    const needsDestination = form.voteType === 'attraction' || form.voteType === 'accommodation' || form.voteType === 'restaurant'
     await addDoc(
       collection(db, 'groups', $currentGroup.id, 'votes'),
       {
         title: form.title.trim(),
         voteType: form.voteType,
-        linkedDestination: form.voteType === 'attraction' ? form.linkedDestination : null,
+        linkedDestination: needsDestination ? form.linkedDestination : null,
         deadline: form.deadline ? new Date(form.deadline) : null,
         maxVotesPerUser: Number(form.maxVotesPerUser) || 1,
         winnersCount: form.voteType === 'attraction' ? Number(form.winnersCount) || 1 : null,
@@ -350,11 +356,12 @@
       <option value="destination">여행지 투표</option>
       <option value="attraction">관광지 투표</option>
       <option value="accommodation">숙소 투표</option>
+      <option value="restaurant">맛집 투표</option>
     </select>
   </label>
   <br><br>
 
-  {#if form.voteType === 'attraction' || form.voteType === 'accommodation'}
+  {#if form.voteType === 'attraction' || form.voteType === 'accommodation' || form.voteType === 'restaurant'}
     <label>연결할 여행지<br>
       {#if closedDestinations.length === 0}
         <p>마감된 여행지 투표가 없습니다. 여행지를 먼저 결정해 주세요.</p>
@@ -402,7 +409,7 @@
   {#if selectedVote.deadline}
     <small> · 마감일: {formatDeadline(selectedVote.deadline)}</small>
   {/if}
-  {#if selectedVote.voteType === 'attraction' && selectedVote.linkedDestination}
+  {#if (selectedVote.voteType === 'attraction' || selectedVote.voteType === 'accommodation' || selectedVote.voteType === 'restaurant') && selectedVote.linkedDestination}
     <small> · 여행지: {selectedVote.linkedDestination}</small>
   {/if}
   <hr>
@@ -419,6 +426,13 @@
           {#if opt.price}<span>{opt.price}</span>{/if}
           {#if opt.bedCount}<span> · 침대 {opt.bedCount}개</span>{/if}
           {#if opt.siteUrl}<span> · <a href={opt.siteUrl} target="_blank" rel="noopener noreferrer">예약 사이트</a></span>{/if}
+        {/if}
+        {#if selectedVote.voteType === 'restaurant'}
+          <br>
+          {#if opt.mealType?.length}<span>{opt.mealType.join('·')}</span>{/if}
+          {#if opt.priceRange}<span>{opt.mealType?.length ? ' · ' : ''}{opt.priceRange}</span>{/if}
+          {#if opt.hours}<span> · 영업시간: {opt.hours}</span>{/if}
+          {#if opt.mainMenu}<span> · 주메뉴: {opt.mainMenu}</span>{/if}
         {/if}
         {#if opt.mapUrl}
           <iframe class="map-embed" src={buildEmbedUrl(opt.mapUrl, opt.placeName)}
@@ -447,7 +461,7 @@
       {#if isShortMapUrl(newOption.mapUrl)}
         <br><small style="color: #c00">단축 URL(maps.app.goo.gl)은 좌표 추출이 불가합니다. Google Maps 주소창의 전체 URL을 붙여넣어 주세요.</small>
       {/if}
-      {#if selectedVote?.voteType === 'accommodation' || form.voteType === 'accommodation'}
+      {#if selectedVote?.voteType === 'accommodation'}
         <br>
         <label>가격<br>
           <input bind:value={newOption.price} placeholder="예: 1박 12만원" style="width: 100%" />
@@ -459,6 +473,29 @@
         <br>
         <label>숙소 사이트 URL (선택)<br>
           <input bind:value={newOption.siteUrl} placeholder="https://www.airbnb.com/..." style="width: 100%" />
+        </label>
+      {/if}
+      {#if selectedVote?.voteType === 'restaurant'}
+        <br>
+        <fieldset style="border: none; padding: 0; margin: 0">
+          <legend>식사 유형</legend>
+          <label><input type="checkbox" bind:group={newOption.mealType} value="조식"> 조식</label>
+          &nbsp;
+          <label><input type="checkbox" bind:group={newOption.mealType} value="중식"> 중식</label>
+          &nbsp;
+          <label><input type="checkbox" bind:group={newOption.mealType} value="석식"> 석식</label>
+        </fieldset>
+        <br>
+        <label>가격대<br>
+          <input bind:value={newOption.priceRange} placeholder="예: 1인 1만원대" style="width: 100%" />
+        </label>
+        <br>
+        <label>영업시간<br>
+          <input bind:value={newOption.hours} placeholder="예: 11:00 - 21:00" style="width: 100%" />
+        </label>
+        <br>
+        <label>주메뉴<br>
+          <input bind:value={newOption.mainMenu} placeholder="예: 삼겹살, 냉면" style="width: 100%" />
         </label>
       {/if}
       <br><br>
@@ -491,6 +528,13 @@
             {#if opt.price}<span>{opt.price}</span>{/if}
             {#if opt.bedCount}<span> · 침대 {opt.bedCount}개</span>{/if}
             {#if opt.siteUrl}<span> · <a href={opt.siteUrl} target="_blank" rel="noopener noreferrer">예약 사이트</a></span>{/if}
+          {/if}
+          {#if selectedVote.voteType === 'restaurant'}
+            <br>
+            {#if opt.mealType?.length}<span>{opt.mealType.join('·')}</span>{/if}
+            {#if opt.priceRange}<span>{opt.mealType?.length ? ' · ' : ''}{opt.priceRange}</span>{/if}
+            {#if opt.hours}<span> · 영업시간: {opt.hours}</span>{/if}
+            {#if opt.mainMenu}<span> · 주메뉴: {opt.mainMenu}</span>{/if}
           {/if}
           {#if opt.mapUrl}
             <iframe
@@ -528,6 +572,12 @@
             {#if opt.price}<span>{opt.price}</span>{/if}
             {#if opt.bedCount}<span> · 침대 {opt.bedCount}개</span>{/if}
             {#if opt.siteUrl}<span> · <a href={opt.siteUrl} target="_blank" rel="noopener noreferrer">예약 사이트</a></span>{/if}
+          {/if}
+          {#if selectedVote.voteType === 'restaurant'}
+            {#if opt.mealType?.length}<span>{opt.mealType.join('·')}</span>{/if}
+            {#if opt.priceRange}<span>{opt.mealType?.length ? ' · ' : ''}{opt.priceRange}</span>{/if}
+            {#if opt.hours}<span> · 영업시간: {opt.hours}</span>{/if}
+            {#if opt.mainMenu}<span> · 주메뉴: {opt.mainMenu}</span>{/if}
           {/if}
         </div>
         <!-- 2행: 내 선택 표시 or +/- 컨트롤 -->
